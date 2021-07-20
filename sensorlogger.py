@@ -167,11 +167,14 @@ def main():
                 sensor = j["sensor"]
                 if not sensor in result:
                     result[sensor] = []
+
                 c = prepare(j)
                 if sensor == "Metadata":
                     result[sensor] = c
                 else:
                     result[sensor].append(c)
+            for k, v in result.items():
+                logging.debug(f"sensor: {k} {len(v)} values")
 
         if args.json:
             json_fn = os.path.splitext(filename)[0] + "_reformat.json"
@@ -181,6 +184,10 @@ def main():
                 f.write(json.dumps(result, indent=4))
 
         if args.gpx:
+            if not "Location" in result:
+                logging.error(f"error: can't create GPX from {filename} - no Location records")
+                sys.exit(1)
+
             gpx_fn = os.path.splitext(filename)[0] + ".gpx"
             gen_gpx(args, gpx_fn, result)
 
