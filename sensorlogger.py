@@ -108,7 +108,7 @@ def gen_gpx(args, gpx_fn, j):
 
     xml = gpx.to_xml(version="1.0")
     logging.debug(
-        f"writing {gpx_fn}: retained samples: {len(pts)}, invalid samples={invalid}"
+        f"writing {gpx_fn}, invalid samples={invalid}"
     )
     with open(gpx_fn, "w") as f:
         f.write(xml)
