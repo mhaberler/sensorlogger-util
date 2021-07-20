@@ -1,6 +1,4 @@
-import csv
 import gpxpy
-from gpxpy.geo import get_course, distance, Location, LocationDelta
 from datetime import datetime
 import argparse
 import sys, os
@@ -17,7 +15,6 @@ skipme = ["seconds_elapsed", "sensor"]
 untouchables = ["Metadata"]
 
 highestQuality = True
-url = "https://github.com/mhaberler/sensorlogger"
 
 
 def prepare(j):
@@ -99,11 +96,11 @@ def gen_gpx(args, gpx_fn, j):
     gpx_track.name = gpx_fn
 
     xml = gpx.to_xml(version="1.0")
-    with open(gpx_fn, "w") as f:
-        f.write(xml)
     logging.debug(
         f"writing {gpx_fn}: retained samples: {len(pts)}, invalid samples={invalid}"
     )
+    with open(gpx_fn, "w") as f:
+        f.write(xml)
 
 
 def main():
@@ -167,6 +164,8 @@ def main():
 
         if args.json:
             json_fn = os.path.splitext(filename)[0] + "_reformat.json"
+            logging.debug(f"writing {json_fn}")
+
             with open(json_fn, "w") as f:
                 f.write(json.dumps(result, indent=4))
 
