@@ -164,7 +164,12 @@ def main():
                     result[sensor] = c
                 else:
                     result[sensor].append(c)
-            # pprint.pprint(result)
+
+        if args.json:
+            json_fn = os.path.splitext(filename)[0] + "_reformat.json"
+            with open(json_fn, "w") as f:
+                f.write(json.dumps(result, indent=4))
+
         if args.gpx:
             gpx_fn = os.path.splitext(filename)[0] + ".gpx"
             gen_gpx(args, gpx_fn, result)
