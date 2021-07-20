@@ -66,6 +66,9 @@ def gen_gpx(args, gpx_fn, j):
                 row["latitude"],
                 row["altitude"],
                 datetime.fromtimestamp(row["time"]),
+                row["horizontalAccuracy"],
+                row["verticalAccuracy"],
+                row["speed"],
             ]
         )
 
@@ -84,8 +87,16 @@ def gen_gpx(args, gpx_fn, j):
         )
 
     for p in pts:
-        (lat, lon, ele, dt) = p
-        pt = gpxpy.gpx.GPXTrackPoint(lon, lat, elevation=ele, time=dt)
+        (lat, lon, ele, dt, hdop, vdop, speed) = p
+        pt = gpxpy.gpx.GPXTrackPoint(
+            lon,
+            lat,
+            elevation=ele,
+            time=dt,
+            speed=speed,
+            horizontal_dilution=hdop,
+            vertical_dilution=vdop,
+        )
         gpx_segment.points.append(pt)
 
     gpx.refresh_bounds()
