@@ -12,13 +12,13 @@ import codecs
 
 from simplify import Simplify3D
 
+highestQuality = True
+
 RE_INT = re.compile(r"^[-+]?([1-9]\d*|0)$")
 RE_FLOAT = re.compile(r"^[-+]?(\d+([.,]\d*)?|[.,]\d+)([eE][-+]?\d+)?$")
 
 skipme = ["seconds_elapsed", "sensor"]
 untouchables = ["Metadata"]
-
-highestQuality = True
 
 
 def prepare(j):
