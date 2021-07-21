@@ -1,7 +1,7 @@
 import gpxpy
 from datetime import datetime
 import argparse
-import sys, os
+import sys, os, io
 import logging
 import pprint
 import rapidjson
@@ -9,6 +9,8 @@ import re
 import zipfile
 import csv
 import codecs
+# from pydub import AudioSegment
+# from pydub.playback import play
 
 from simplify import Simplify3D
 
@@ -22,31 +24,36 @@ untouchables = ["Metadata"]
 
 
 def prepare(j):
-    cleaned = {}
-    for k, v in j.items():
+    try:
+        cleaned = {}
+        for k, v in j.items():
 
-        if k in skipme:
-            continue
+            if k in skipme:
+                continue
 
-        if k in untouchables:
-            return j
+            if k in untouchables:
+                return j
 
-        if k == "time":
-            ns = float(v[10:])
-            secs = float(v[0:-9]) + ns * 1e-9
-            cleaned[k] = datetime.fromtimestamp(secs)
-            continue
+            if k == "time":
+                ns = float(v[10:])
+                secs = float(v[0:-9]) + ns * 1e-9
+                cleaned[k] = datetime.fromtimestamp(secs)
+                continue
 
-        if RE_INT.match(v):
-            cleaned[k] = int(v)
-            continue
+            if RE_INT.match(v):
+                cleaned[k] = int(v)
+                continue
 
-        if RE_FLOAT.match(v):
-            cleaned[k] = float(v)
-            continue
+            if RE_FLOAT.match(v):
+                cleaned[k] = float(v)
+                continue
 
-        cleaned[k] = v
-    return cleaned
+            cleaned[k] = v
+        return cleaned
+
+    except Exception as e:
+        logging.debug(f"skipping sample: {j} - {e}")
+        return None
 
 
 def gen_gpx(args, gpx_fn, j):
@@ -165,7 +172,8 @@ def main():
                     if not sensor in result:
                         result[sensor] = []
                     c = prepare(j)
-                    result[sensor].append(c)
+                    if c:
+                        result[sensor].append(c)
                 for k, v in result.items():
                     logging.debug(f"sensor: {k} {len(v)} values")
 
@@ -173,8 +181,8 @@ def main():
             try:
                 with zipfile.ZipFile(filename) as zf:
                     for info in zf.infolist():
-                        try:
-                            sensor = info.filename.rsplit(".", 1)[0]
+                        basename, ext = info.filename.rsplit(".", 1)
+                        if ext.lower() == "csv":
                             reader = csv.DictReader(
                                 codecs.iterdecode(zf.open(info.filename, "r"), "utf-8")
                             )
@@ -184,13 +192,16 @@ def main():
                             )
                             l = [prepare(c) for c in rows]
                             if len(l):
-                                result[sensor] = l
+                                result[basename] = l
+                        if ext.lower() == "mp4":
+                            buffer = zf.read(info.filename)
+                            logging.debug(f"audio file: {info.filename} size={len(buffer)}")
 
-                        except KeyError:
-                            logging.error(
-                                f"zip file {filename}: no such member {info.filename}"
-                            )
-                            continue
+                            # file_like = io.BytesIO(buffer)
+                            # file_like.seek(0)
+                            # sound = AudioSegment(file_like, format="mp4")
+                            # play(sound)
+
             except zipfile.BadZipFile as e:
                 logging.error(f"{filename}: {e}")
 
