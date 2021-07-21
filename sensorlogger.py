@@ -4,7 +4,7 @@ import argparse
 import sys, os
 import logging
 import pprint
-import json
+import rapidjson
 import re
 import zipfile
 import csv
@@ -34,7 +34,7 @@ def prepare(j):
         if k == "time":
             ns = float(v[10:])
             secs = float(v[0:-9]) + ns * 1e-9
-            cleaned[k] = secs
+            cleaned[k] = datetime.fromtimestamp(secs)
             continue
 
         if RE_INT.match(v):
@@ -69,7 +69,7 @@ def gen_gpx(args, gpx_fn, j):
                 row["longitude"],
                 row["latitude"],
                 row["altitude"],
-                datetime.fromtimestamp(row["time"]),
+                row["time"],
                 row["horizontalAccuracy"],
                 row["verticalAccuracy"],
                 row["speed"],
@@ -119,20 +119,14 @@ def gen_gpx(args, gpx_fn, j):
 def main():
     ap = argparse.ArgumentParser(
         usage="%(prog)s ",
-        description="clean a Sensor Logger JSON file, and optionally convert to gpx",
+        description="clean a Sensor Logger JSON or zipped CSV files, and optionally convert to GPX",
     )
     ap.add_argument("-d", "--debug", action="store_true", help="show detailed logging")
-    ap.add_argument(
-        "-m",
-        "--merge",
-        action="store_true",
-        help="merge all objects in a single timeline",
-    )
     ap.add_argument(
         "-i",
         "--iso",
         action="store_true",
-        help="use ISO timestamps (default seconds since epoch)",
+        help="use ISO timestamps (default Unix timestamps - seconds since epoch)",
     )
     ap.add_argument(
         "-g", "--gpx", action="store_true", help="save GPX file as (basename).gpx"
@@ -143,8 +137,6 @@ def main():
         action="store_true",
         help="save reformatted JSON file as (basename)_fmt.json",
     )
-
-    ap.add_argument("files", nargs="*")
     ap.add_argument(
         "--tolerance",
         action="store",
@@ -153,6 +145,7 @@ def main():
         type=float,
         help="tolerance value for simplify (see https://github.com/mhaberler/simplify.py)",
     )
+    ap.add_argument("files", nargs="*")
     args, extra = ap.parse_known_args()
 
     level = logging.WARNING
@@ -166,7 +159,7 @@ def main():
         if filename.endswith(".json"):
             with open(filename, "rb") as fp:
                 s = fp.read()
-                js = json.loads(s)
+                js = rapidjson.loads(s)
                 for j in js:
                     sensor = j["sensor"]
                     if not sensor in result:
@@ -208,16 +201,23 @@ def main():
         if args.json:
             json_fn = os.path.splitext(filename)[0] + "_reformat.json"
             logging.debug(f"writing {json_fn}")
-
+            mode = rapidjson.DM_ISO8601 if args.iso else rapidjson.DM_UNIX_TIME
             with open(json_fn, "w") as f:
-                f.write(json.dumps(result, indent=4))
+                f.write(
+                    rapidjson.dumps(
+                        result,
+                        indent=4,
+                        write_mode=rapidjson.WM_PRETTY,
+                        datetime_mode=mode,
+                    )
+                )
 
         if args.gpx:
             if not "Location" in result:
                 logging.error(
                     f"error: can't create GPX from {filename} - no Location records"
                 )
-                sys.exit(1)
+                continue
 
             gpx_fn = os.path.splitext(filename)[0] + ".gpx"
             gen_gpx(args, gpx_fn, result)
