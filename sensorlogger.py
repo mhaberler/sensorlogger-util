@@ -160,8 +160,8 @@ def main():
         level = logging.DEBUG
     logging.basicConfig(level=level, format="%(funcName)s:%(lineno)s %(message)s")
 
-    result = {}
     for filename in args.files:
+        result = {}
 
         if filename.endswith(".json"):
             with open(filename, "rb") as fp:
@@ -182,15 +182,16 @@ def main():
                     for info in zf.infolist():
                         try:
                             sensor = info.filename.rsplit(".", 1)[0]
-                            logging.debug(
-                                f"reading {filename}:{info.filename}, {sensor=}"
-                            )
                             reader = csv.DictReader(
                                 codecs.iterdecode(zf.open(info.filename, "r"), "utf-8")
                             )
-                            result[sensor] = []
-                            for c in reader:
-                                result[sensor].append(prepare(c))
+                            rows = list(reader)
+                            logging.debug(
+                                f"read {filename}:member={info.filename}, {len(rows)} values"
+                            )
+                            l = [prepare(c) for c in rows]
+                            if len(l):
+                                result[sensor] = l
 
                         except KeyError:
                             logging.error(
