@@ -6,6 +6,10 @@ import logging
 import pprint
 import json
 import re
+import zipfile
+import csv
+import codecs
+
 from simplify import Simplify3D
 
 RE_INT = re.compile(r"^[-+]?([1-9]\d*|0)$")
@@ -107,9 +111,7 @@ def gen_gpx(args, gpx_fn, j):
     gpx_track.name = gpx_fn
 
     xml = gpx.to_xml(version="1.0")
-    logging.debug(
-        f"writing {gpx_fn}, invalid samples={invalid}"
-    )
+    logging.debug(f"writing {gpx_fn}, invalid samples={invalid}")
     with open(gpx_fn, "w") as f:
         f.write(xml)
 
@@ -160,21 +162,47 @@ def main():
 
     result = {}
     for filename in args.files:
-        with open(filename, "rb") as fp:
-            s = fp.read()
-            js = json.loads(s)
-            for j in js:
-                sensor = j["sensor"]
-                if not sensor in result:
-                    result[sensor] = []
 
-                c = prepare(j)
-                if sensor == "Metadata":
-                    result[sensor] = c
-                else:
+        if filename.endswith(".json"):
+            with open(filename, "rb") as fp:
+                s = fp.read()
+                js = json.loads(s)
+                for j in js:
+                    sensor = j["sensor"]
+                    if not sensor in result:
+                        result[sensor] = []
+                    c = prepare(j)
                     result[sensor].append(c)
-            for k, v in result.items():
-                logging.debug(f"sensor: {k} {len(v)} values")
+                for k, v in result.items():
+                    logging.debug(f"sensor: {k} {len(v)} values")
+
+        if filename.endswith(".zip"):
+            try:
+                with zipfile.ZipFile(filename) as zf:
+                    for info in zf.infolist():
+                        try:
+                            sensor = info.filename.rsplit(".", 1)[0]
+                            logging.debug(
+                                f"reading {filename}:{info.filename}, {sensor=}"
+                            )
+                            reader = csv.DictReader(
+                                codecs.iterdecode(zf.open(info.filename, "r"), "utf-8")
+                            )
+                            result[sensor] = []
+                            for c in reader:
+                                result[sensor].append(prepare(c))
+
+                        except KeyError:
+                            logging.error(
+                                f"zip file {filename}: no such member {info.filename}"
+                            )
+                            continue
+            except zipfile.BadZipFile as e:
+                logging.error(f"{filename}: {e}")
+
+        # fixup the Metadata record
+        if "Metadata" in result and len(result["Metadata"]) == 1:
+            result["Metadata"] = result["Metadata"][0]
 
         if args.json:
             json_fn = os.path.splitext(filename)[0] + "_reformat.json"
@@ -185,7 +213,9 @@ def main():
 
         if args.gpx:
             if not "Location" in result:
-                logging.error(f"error: can't create GPX from {filename} - no Location records")
+                logging.error(
+                    f"error: can't create GPX from {filename} - no Location records"
+                )
                 sys.exit(1)
 
             gpx_fn = os.path.splitext(filename)[0] + ".gpx"
