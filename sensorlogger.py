@@ -140,8 +140,8 @@ def stats(j):
             continue
 
         n = len(record)
-        ts = gettime(record[0]["time"]).isoformat()
-        te = gettime(record[-1]["time"]).isoformat()
+        ts = gettime(record[0]["time"]).isoformat(timespec="seconds")
+        te = gettime(record[-1]["time"]).isoformat(timespec="seconds")
         logging.debug(f"{k=}: {n=} {ts=} {te=}")
 
 
