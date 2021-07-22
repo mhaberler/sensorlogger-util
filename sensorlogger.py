@@ -1,5 +1,6 @@
 import gpxpy
-from datetime import datetime
+from datetime import datetime, timedelta
+import pytz
 import argparse
 import sys, os, io
 import logging
@@ -9,8 +10,9 @@ import re
 import zipfile
 import csv
 import codecs
-# from pydub import AudioSegment
-# from pydub.playback import play
+
+from pydub import AudioSegment
+from pydub.playback import play
 
 from simplify import Simplify3D
 
@@ -37,7 +39,7 @@ def prepare(j):
             if k == "time":
                 ns = float(v[10:])
                 secs = float(v[0:-9]) + ns * 1e-9
-                cleaned[k] = datetime.fromtimestamp(secs)
+                cleaned[k] = datetime.utcfromtimestamp(secs).replace(tzinfo=pytz.utc)
                 continue
 
             if RE_INT.match(v):
@@ -57,8 +59,6 @@ def prepare(j):
 
 
 def gen_gpx(args, gpx_fn, j):
-    invalid = 0
-    samples = 0
     gpx = gpxpy.gpx.GPX()
 
     # Create first track in our GPX:
@@ -118,9 +118,31 @@ def gen_gpx(args, gpx_fn, j):
     gpx_track.name = gpx_fn
 
     xml = gpx.to_xml(version="1.0")
-    logging.debug(f"writing {gpx_fn}, invalid samples={invalid}")
+    logging.debug(f"writing {gpx_fn}, {len(pts)} track points")
     with open(gpx_fn, "w") as f:
         f.write(xml)
+
+def gettime(value, offset=0):
+    if isinstance(value, float):
+        return datetime.utcfromtimestamp(value + offset).replace(tzinfo=pytz.utc)
+    if isinstance(value, str):
+        return dateutil.parser.parse(value) + timedelta(seconds=offset)
+    if isinstance(value, datetime):
+        return value + timedelta(seconds=offset)
+    raise Exception(f"invalid type for time: {value} : {type(value)}")
+
+
+def stats(j):
+    for k in j.keys():
+        record = j[k]
+        if k == "Metadata":
+            logging.debug(f"Metadata: {record}")
+            continue
+
+        n = len(record)
+        ts = gettime(record[0]["time"]).isoformat()
+        te = gettime(record[-1]["time"]).isoformat()
+        logging.debug(f"{k=}: {n=} {ts=} {te=}")
 
 
 def main():
@@ -193,14 +215,19 @@ def main():
                             l = [prepare(c) for c in rows]
                             if len(l):
                                 result[basename] = l
+                            continue
+
                         if ext.lower() == "mp4":
                             buffer = zf.read(info.filename)
-                            logging.debug(f"audio file: {info.filename} size={len(buffer)}")
+                            logging.debug(
+                                f"audio file: {info.filename} size={len(buffer)}"
+                            )
 
-                            # file_like = io.BytesIO(buffer)
-                            # file_like.seek(0)
+                            file_like = io.BytesIO(buffer)
+                            file_like.seek(0)
                             # sound = AudioSegment(file_like, format="mp4")
                             # play(sound)
+                            continue
 
             except zipfile.BadZipFile as e:
                 logging.error(f"{filename}: {e}")
@@ -219,7 +246,7 @@ def main():
                         result,
                         indent=4,
                         write_mode=rapidjson.WM_PRETTY,
-                        datetime_mode=mode,
+                        datetime_mode=mode
                     )
                 )
 
@@ -233,6 +260,7 @@ def main():
             gpx_fn = os.path.splitext(filename)[0] + ".gpx"
             gen_gpx(args, gpx_fn, result)
 
+        stats(result)
 
 if __name__ == "__main__":
     main()
