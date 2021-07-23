@@ -58,6 +58,13 @@ def prepare(j):
         return None
 
 
+def stringify(d):
+    text = ""
+    for k, v in d.items():
+        text += f"{k}: {v}, "
+    return text.rstrip(", ")
+
+
 def gen_gpx(args, gpx_fn, j):
     gpx = gpxpy.gpx.GPX()
 
@@ -113,7 +120,8 @@ def gen_gpx(args, gpx_fn, j):
     gpx.refresh_bounds()
     metadata = j["Metadata"]
     gpx.creator = f"Sensor Logger, app version {metadata['appVersion']}"
-    gpx.author_name = f"{metadata['device name']}, {metadata['platform']}, recorded {metadata['recording time']}"
+
+    gpx.author_name = stringify(metadata)
     gpx.description = " ".join(sys.argv)
     gpx_track.name = gpx_fn
 
@@ -210,12 +218,9 @@ def main():
 
     for filename in args.files:
         result = {}
-        destname = os.path.basename(urllib.parse.urlparse(filename).path)
-
-        if filename.startswith("http://") or filename.startswith("https://"):
-            url = filename
-        else:
-            url = "file:" + filename
+        a = urllib.parse.urlparse(filename)
+        destname = os.path.basename(a.path)
+        url = filename if len(a.scheme) else "file:" + filename
         buffer = urllib.request.urlopen(url).read()
         logging.debug(f"{filename} -> {destname} {len(buffer)} bytes")
 
@@ -243,7 +248,7 @@ def main():
                             )
                             rows = list(reader)
                             logging.debug(
-                                f"read {filename}:member={info.filename}, {len(rows)} samples"
+                                f"read {destname}:member={info.filename}, {len(rows)} samples"
                             )
                             l = [prepare(c) for c in rows]
                             if len(l):
