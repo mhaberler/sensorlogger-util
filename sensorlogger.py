@@ -4,12 +4,12 @@ import pytz
 import argparse
 import sys, os, io
 import logging
-import pprint
 import rapidjson
 import re
 import zipfile
 import csv
 import codecs
+import urllib.request
 
 from pydub import AudioSegment
 from pydub.playback import play
@@ -151,8 +151,6 @@ def stats(j):
     for k in j.keys():
         record = j[k]
         if k == "Metadata":
-            for key in set(record.keys()).difference({"sensors", "sampleRateMs"}):
-                logging.debug(f"\t{key}: {record[key]}")
             continue
 
         n = len(record)
@@ -212,24 +210,29 @@ def main():
 
     for filename in args.files:
         result = {}
+        if filename.startswith("http://") or filename.startswith("https://"):
+            url = filename
+        else:
+            url = "file:" + filename
+        buffer = urllib.request.urlopen(url).read()
+        logging.debug(f"{filename} {len(buffer)} bytes")
 
         if filename.endswith(".json"):
-            with open(filename, "rb") as fp:
-                s = fp.read()
-                js = rapidjson.loads(s)
-                for j in js:
-                    sensor = j["sensor"]
-                    if not sensor in result:
-                        result[sensor] = []
-                    c = prepare(j)
-                    if c:
-                        result[sensor].append(c)
-                for k, v in result.items():
-                    logging.debug(f"sensor: {k} {len(v)} values")
+            js = rapidjson.loads(buffer)
+            for j in js:
+                sensor = j["sensor"]
+                if not sensor in result:
+                    result[sensor] = []
+                c = prepare(j)
+                if c:
+                    result[sensor].append(c)
+            for k, v in result.items():
+                logging.debug(f"sensor: {k} {len(v)} samples")
 
         if filename.endswith(".zip"):
             try:
-                with zipfile.ZipFile(filename) as zf:
+                ff = io.BytesIO(buffer)
+                with zipfile.ZipFile(ff) as zf:
                     for info in zf.infolist():
                         basename, ext = info.filename.rsplit(".", 1)
                         if ext.lower() == "csv":
@@ -238,7 +241,7 @@ def main():
                             )
                             rows = list(reader)
                             logging.debug(
-                                f"read {filename}:member={info.filename}, {len(rows)} values"
+                                f"read {filename}:member={info.filename}, {len(rows)} samples"
                             )
                             l = [prepare(c) for c in rows]
                             if len(l):
