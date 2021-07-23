@@ -9,7 +9,7 @@ import re
 import zipfile
 import csv
 import codecs
-import urllib.request
+import urllib.request, urllib.parse
 
 from pydub import AudioSegment
 from pydub.playback import play
@@ -210,12 +210,14 @@ def main():
 
     for filename in args.files:
         result = {}
+        destname = os.path.basename(urllib.parse.urlparse(filename).path)
+
         if filename.startswith("http://") or filename.startswith("https://"):
             url = filename
         else:
             url = "file:" + filename
         buffer = urllib.request.urlopen(url).read()
-        logging.debug(f"{filename} {len(buffer)} bytes")
+        logging.debug(f"{filename} -> {destname} {len(buffer)} bytes")
 
         if filename.endswith(".json"):
             js = rapidjson.loads(buffer)
@@ -268,7 +270,7 @@ def main():
             result["Metadata"] = result["Metadata"][0]
 
         if args.json:
-            json_fn = os.path.splitext(filename)[0] + "_reformat.json"
+            json_fn = os.path.splitext(destname)[0] + "_reformat.json"
             logging.debug(f"writing {json_fn}")
             mode = rapidjson.DM_ISO8601 if args.iso else rapidjson.DM_UNIX_TIME
             with open(json_fn, "w") as f:
@@ -288,7 +290,7 @@ def main():
                 )
                 continue
 
-            gpx_fn = os.path.splitext(filename)[0] + ".gpx"
+            gpx_fn = os.path.splitext(destname)[0] + ".gpx"
             gen_gpx(args, gpx_fn, result)
 
         stats(result)
