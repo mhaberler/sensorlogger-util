@@ -122,6 +122,7 @@ def gen_gpx(args, gpx_fn, j):
     with open(gpx_fn, "w") as f:
         f.write(xml)
 
+
 def gettime(value, offset=0):
     if isinstance(value, float):
         return datetime.utcfromtimestamp(value + offset).replace(tzinfo=pytz.utc)
@@ -133,16 +134,43 @@ def gettime(value, offset=0):
 
 
 def stats(j):
+
+    sensordict = {}
+    metadata = j.get("Metadata", None)
+    if metadata:
+        sensors = metadata.get("sensors", None)
+        rates = metadata.get("sampleRateMs", None)
+        if sensors and rates:
+            ratelist = rates.split("|")
+            sensorlist = sensors.split("|")
+            for i in range(len(sensorlist)):
+                if RE_FLOAT.match(ratelist[i]):
+                    s = sensorlist[i]
+                    sensordict[s] = {"nominalrate": ratelist[i]}
+
     for k in j.keys():
         record = j[k]
         if k == "Metadata":
-            logging.debug(f"Metadata: {record}")
+            for key in set(record.keys()).difference({"sensors", "sampleRateMs"}):
+                logging.debug(f"\t{key}: {record[key]}")
             continue
 
         n = len(record)
-        ts = gettime(record[0]["time"]).isoformat(timespec="seconds")
-        te = gettime(record[-1]["time"]).isoformat(timespec="seconds")
-        logging.debug(f"{k=}: {n=} {ts=} {te=}")
+        start = record[0]["time"]
+        end = record[-1]["time"]
+        duration = timedelta.total_seconds(end - start)
+
+        ts = gettime(start).isoformat(timespec="seconds")
+        te = gettime(end).isoformat(timespec="seconds")
+        txt = f"{k:25.25}: {ts}..{te} {n:6d} samples, rate={1000.0/(n/duration):.2f}"
+        if k in sensordict:
+            txt += f"/{sensordict[k]['nominalrate']}"
+        txt += " samples/sec"
+        logging.debug(txt)
+
+    if metadata:
+        for k, v in metadata.items():
+            logging.debug(f"\t{k}: {v}")
 
 
 def main():
@@ -246,7 +274,7 @@ def main():
                         result,
                         indent=4,
                         write_mode=rapidjson.WM_PRETTY,
-                        datetime_mode=mode
+                        datetime_mode=mode,
                     )
                 )
 
@@ -261,6 +289,7 @@ def main():
             gen_gpx(args, gpx_fn, result)
 
         stats(result)
+
 
 if __name__ == "__main__":
     main()
