@@ -172,7 +172,7 @@ def stats(j):
 
         ts = gettime(start).isoformat(timespec="seconds")
         te = gettime(end).isoformat(timespec="seconds")
-        txt = f"{k:25.25}: {ts}..{te} {n:6d} samples, rate={1000.0/(n/duration):.2f}"
+        txt = f"{k:25.25}: {ts}..{te} {duration:.1f}secs, {n:6d} samples, rate={1000.0/(n/duration):.2f}"
         if k in sensordict:
             txt += f"/{sensordict[k]['nominalrate']}"
         txt += " samples/sec"
@@ -284,7 +284,6 @@ def main():
         if "Metadata" in result and len(result["Metadata"]) == 1:
             result["Metadata"] = result["Metadata"][0]
 
-
         if args.timestamp_fix:
             corr = {}
             if "Location" in result:
@@ -292,7 +291,7 @@ def main():
                 baseline = result["Location"][0]["time"]
 
                 for k in result.keys():
-                    if k in {"Location","Metadata"}:
+                    if k in {"Location", "Metadata"}:
                         continue
                     first = result[k][0]["time"]
                     delta = baseline - first
@@ -300,10 +299,8 @@ def main():
                         logging.error(f"warping {k} starttime by {delta}")
                         for e in result[k]:
                             e["time"] += delta
-
             else:
-                 logging.error(f"{info.filename}: no Location records - cant fix")
-
+                logging.error(f"{info.filename}: no Location records - cant fix")
 
         if args.json:
             json_fn = os.path.splitext(destname)[0] + "_reformat.json"
