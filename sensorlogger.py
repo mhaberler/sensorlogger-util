@@ -18,6 +18,10 @@ from simplify import Simplify3D
 
 highestQuality = True
 
+# if Location and other samples start more than BUG_THRESHOLD secs
+# apart, then use the Location timestamp for that sample series (-t)
+BUG_THRESHOLD = 60
+
 RE_INT = re.compile(r"^[-+]?([1-9]\d*|0)$")
 RE_FLOAT = re.compile(r"^[-+]?(\d+([.,]\d*)?|[.,]\d+)([eE][-+]?\d+)?$")
 
@@ -201,6 +205,12 @@ def main():
         help="save reformatted JSON file as (basename)_fmt.json",
     )
     ap.add_argument(
+        "-t",
+        "--timestamp-fix",
+        action="store_true",
+        help="use Location time as start time for all samples (bug workaround)",
+    )
+    ap.add_argument(
         "--tolerance",
         action="store",
         dest="tolerance",
@@ -273,6 +283,27 @@ def main():
         # fixup the Metadata record
         if "Metadata" in result and len(result["Metadata"]) == 1:
             result["Metadata"] = result["Metadata"][0]
+
+
+        if args.timestamp_fix:
+            corr = {}
+            if "Location" in result:
+                # assume location time is correct
+                baseline = result["Location"][0]["time"]
+
+                for k in result.keys():
+                    if k in {"Location","Metadata"}:
+                        continue
+                    first = result[k][0]["time"]
+                    delta = baseline - first
+                    if abs(delta.total_seconds()) > BUG_THRESHOLD:
+                        logging.error(f"warping {k} starttime by {delta}")
+                        for e in result[k]:
+                            e["time"] += delta
+
+            else:
+                 logging.error(f"{info.filename}: no Location records - cant fix")
+
 
         if args.json:
             json_fn = os.path.splitext(destname)[0] + "_reformat.json"
