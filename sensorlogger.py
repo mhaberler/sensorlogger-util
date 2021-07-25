@@ -169,7 +169,9 @@ def stats(j):
         start = record[0]["time"]
         end = record[-1]["time"]
         duration = timedelta.total_seconds(end - start)
-
+        if abs(duration) < 0.00001:
+            logging.debug(f"\t{k}: zero duration")
+            continue
         ts = gettime(start).isoformat(timespec="seconds")
         te = gettime(end).isoformat(timespec="seconds")
         txt = f"{k:25.25}: {ts}..{te} {duration:.1f}secs, {n:6d} samples, rate={1000.0/(n/duration):.2f}"
