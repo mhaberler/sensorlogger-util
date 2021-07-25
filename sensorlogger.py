@@ -174,7 +174,7 @@ def stats(j):
             continue
         ts = gettime(start).isoformat(timespec="seconds")
         te = gettime(end).isoformat(timespec="seconds")
-        txt = f"{k:25.25}: {ts}..{te} {duration:.1f}secs, {n:6d} samples, rate={1000.0/(n/duration):.2f}"
+        txt = f"{k:25.25}: {ts}..{te} {duration:.1f}secs, {n:6d} samples, {1000.0/(n/duration):.2f} ms/Sample"
         if k in sensordict:
             txt += f"/{sensordict[k]['nominalrate']}"
         txt += " samples/sec"
