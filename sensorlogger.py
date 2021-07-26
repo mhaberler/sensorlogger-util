@@ -158,7 +158,16 @@ def stats(j):
             for i in range(len(sensorlist)):
                 if RE_FLOAT.match(ratelist[i]):
                     s = sensorlist[i]
-                    sensordict[s] = {"nominalrate": ratelist[i]}
+                    sensordict[s] = {"nominalrate": float(ratelist[i])}
+
+
+
+    txt = "Sensor                     start                      duration"
+    txt += " samples   actual    nominal"
+
+    logging.debug(txt)
+    logging.debug(" "*77 + "ms/sample")
+
 
     for k in j.keys():
         record = j[k]
@@ -169,18 +178,24 @@ def stats(j):
         start = record[0]["time"]
         end = record[-1]["time"]
         duration = timedelta.total_seconds(end - start)
-        if abs(duration) < 0.00001:
-            logging.debug(f"\t{k}: zero duration")
-            continue
         ts = gettime(start).isoformat(timespec="seconds")
         te = gettime(end).isoformat(timespec="seconds")
-        txt = f"{k:25.25}: {ts}..{te} {duration:.1f}secs, {n:6d} samples, {1000.0/(n/duration):.2f} ms/Sample"
+        txt = f"{k:25.25}  {ts} {duration:6.1f}  {n:6d}"
+
+
+        if abs(duration) < 0.00001:
+            txt += "                  "
+        else:
+            txt += f"      {1000.0/(n/duration):.2f}   "
         if k in sensordict:
-            txt += f"/{sensordict[k]['nominalrate']}"
-        txt += " samples/sec"
+            if abs(sensordict[k]['nominalrate'])  < 0.001:
+                txt += f" max"
+            else:
+                txt += f"{sensordict[k]['nominalrate']:6.0f} "
         logging.debug(txt)
 
     if metadata:
+        logging.debug("Metadata:")
         for k, v in metadata.items():
             logging.debug(f"\t{k}: {v}")
 
@@ -260,7 +275,7 @@ def main():
                             )
                             rows = list(reader)
                             logging.debug(
-                                f"read {destname}:member={info.filename}, {len(rows)} samples"
+                                f"read {destname}:member={info.filename}"
                             )
                             l = [prepare(c) for c in rows]
                             if len(l):
