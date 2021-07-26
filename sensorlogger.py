@@ -12,7 +12,8 @@ import codecs
 import urllib.request, urllib.parse
 
 from pydub import AudioSegment
-from pydub.playback import play
+
+# from pydub.playback import play
 
 from simplify import Simplify3D
 
@@ -160,14 +161,11 @@ def stats(j):
                     s = sensorlist[i]
                     sensordict[s] = {"nominalrate": float(ratelist[i])}
 
-
-
     txt = "Sensor                     start                      duration"
     txt += " samples   actual    nominal"
 
     logging.debug(txt)
-    logging.debug(" "*77 + "ms/sample")
-
+    logging.debug(" " * 77 + "ms/sample")
 
     for k in j.keys():
         record = j[k]
@@ -182,13 +180,12 @@ def stats(j):
         te = gettime(end).isoformat(timespec="seconds")
         txt = f"{k:25.25}  {ts} {duration:6.1f}  {n:6d}"
 
-
         if abs(duration) < 0.00001:
             txt += "                  "
         else:
             txt += f"      {1000.0/(n/duration):.2f}   "
         if k in sensordict:
-            if abs(sensordict[k]['nominalrate'])  < 0.001:
+            if abs(sensordict[k]["nominalrate"]) < 0.001:
                 txt += f" max"
             else:
                 txt += f"{sensordict[k]['nominalrate']:6.0f} "
@@ -219,7 +216,7 @@ def main():
         "-j",
         "--json",
         action="store_true",
-        help="save reformatted JSON file as (basename)_fmt.json",
+        help="save reformatted JSON file as (basename)_reformat.json",
     )
     ap.add_argument(
         "-t",
@@ -274,9 +271,7 @@ def main():
                                 codecs.iterdecode(zf.open(info.filename, "r"), "utf-8")
                             )
                             rows = list(reader)
-                            logging.debug(
-                                f"read {destname}:member={info.filename}"
-                            )
+                            logging.debug(f"read {destname}:member={info.filename}")
                             l = [prepare(c) for c in rows]
                             if len(l):
                                 result[basename] = l
@@ -290,7 +285,12 @@ def main():
 
                             file_like = io.BytesIO(buffer)
                             file_like.seek(0)
-                            # sound = AudioSegment(file_like, format="mp4")
+                            # sound = AudioSegment(file_like) #, format="m4a")
+                            sound = AudioSegment.from_file(file_like)  # , codec="m4a")
+                            logging.debug(
+                                f"read {destname}:member={info.filename}, audio duration={sound.duration_seconds:.1f} seconds, "
+                                f"frame rate={sound.frame_rate} channels={sound.channels} bitspersample={sound.sample_width*8}"
+                            )
                             # play(sound)
                             continue
 
