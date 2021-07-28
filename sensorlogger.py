@@ -15,6 +15,8 @@ from pydub import AudioSegment
 
 # from pydub.playback import play
 
+import pytimeparse
+
 from simplify import Simplify3D
 
 highestQuality = True
@@ -173,6 +175,8 @@ def stats(j):
             continue
 
         n = len(record)
+        if n == 0:
+            continue
         start = record[0]["time"]
         end = record[-1]["time"]
         duration = timedelta.total_seconds(end - start)
@@ -195,6 +199,11 @@ def stats(j):
         logging.debug("Metadata:")
         for k, v in metadata.items():
             logging.debug(f"\t{k}: {v}")
+
+
+class ParseTimedelta(argparse.Action):
+    def __call__(self, parser, args, values, option_string=None):
+        setattr(args, self.dest, pytimeparse.parse(values))
 
 
 def main():
@@ -232,6 +241,19 @@ def main():
         type=float,
         help="tolerance value for simplify (see https://github.com/mhaberler/simplify.py)",
     )
+    ap.add_argument(
+        "--skip",
+        action=ParseTimedelta,
+        default=0.0,
+        help="skip <time> from start (like '10s' or '1h 20m 12s'",
+    )
+    ap.add_argument(
+        "--trim",
+        action=ParseTimedelta,
+        default=0.0,
+        help="trim seconds from end (like '10s' or '1h 20m 12s'",
+    )
+
     ap.add_argument("files", nargs="*")
     args, extra = ap.parse_known_args()
 
@@ -239,6 +261,11 @@ def main():
     if args.debug:
         level = logging.DEBUG
     logging.basicConfig(level=level, format="%(funcName)s:%(lineno)s %(message)s")
+
+    if args.skip:
+        logging.debug(f"skipping {args.skip=}s into log")
+    if args.trim:
+        logging.debug(f"trimming {args.trim=}s off end of log")
 
     for filename in args.files:
         result = {}
@@ -318,6 +345,30 @@ def main():
                             e["time"] += delta
             else:
                 logging.error(f"{info.filename}: no Location records - cant fix")
+
+        if args.skip or args.trim:
+            for k in result.keys():
+                if k in {"Metadata"}:
+                    continue
+                if len(result[k]) == 0:
+                    logging.debug(f"{k}: no samples - nothing to skip/trim")
+                    continue
+                nskip = 0
+                ntrim = 0
+                start = result[k][0]["time"] + timedelta(seconds=args.skip)
+                end = result[k][-1]["time"] - timedelta(seconds=args.trim)
+                pruned = []
+                for s in result[k]:
+                    if s["time"] <= start:
+                        nskip += 1
+                        continue
+                    if s["time"] >= end:
+                        ntrim += 1
+                        continue
+                    pruned.append(s)
+                result[k] = pruned
+                if nskip or ntrim:
+                    logging.debug(f"{k}: skipped {nskip}, trimmed {ntrim} samples")
 
         if args.json:
             json_fn = os.path.splitext(destname)[0] + "_reformat.json"
