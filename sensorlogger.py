@@ -319,6 +319,14 @@ def main():
                                 f"frame rate={sound.frame_rate} channels={sound.channels} bitspersample={sound.sample_width*8}"
                             )
                             # play(sound)
+                            pruned = sound[int(args.skip*1000):int(-args.trim*1000)]
+                            # pydub does things in milliseconds
+                            dest = f"{basename}_pruned.wav"
+                            logging.debug(f"saving pruned {info.filename} to {dest},"
+                                          f"audio duration={pruned.duration_seconds:.1f} seconds")
+
+                            pruned.export(f"{basename}_pruned.wav", format="wav")
+
                             continue
 
             except zipfile.BadZipFile as e:
