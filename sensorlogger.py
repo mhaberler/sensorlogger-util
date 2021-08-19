@@ -228,12 +228,6 @@ def main():
         help="save reformatted JSON file as (basename)_reformat.json",
     )
     ap.add_argument(
-        "-t",
-        "--timestamp-fix",
-        action="store_true",
-        help="use Location time as start time for all samples (bug workaround)",
-    )
-    ap.add_argument(
         "--tolerance",
         action="store",
         dest="tolerance",
@@ -335,24 +329,6 @@ def main():
         # fixup the Metadata record
         if "Metadata" in result and len(result["Metadata"]) == 1:
             result["Metadata"] = result["Metadata"][0]
-
-        if args.timestamp_fix:
-            corr = {}
-            if "Location" in result:
-                # assume location time is correct
-                baseline = result["Location"][0]["time"]
-
-                for k in result.keys():
-                    if k in {"Location", "Metadata"}:
-                        continue
-                    first = result[k][0]["time"]
-                    delta = baseline - first
-                    if abs(delta.total_seconds()) > BUG_THRESHOLD:
-                        logging.error(f"warping {k} starttime by {delta}")
-                        for e in result[k]:
-                            e["time"] += delta
-            else:
-                logging.error(f"{info.filename}: no Location records - cant fix")
 
         if args.skip or args.trim:
             for k in result.keys():
