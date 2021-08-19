@@ -208,8 +208,7 @@ def args2range(args, start, end):
         stop = end - timedelta(seconds=args.trim)
     if args.end:
         stop = args.end
-    return (args.skip, (end - stop).total_seconds(),
-           begin, stop)
+    return (args.skip, (stop - start).total_seconds(), begin, stop)
 
 
 class ParseTimedelta(argparse.Action):
@@ -342,17 +341,19 @@ def main():
                                 f"frame rate={sound.frame_rate} channels={sound.channels} bitspersample={sound.sample_width*8}"
                             )
                             # play(sound)
+                            start_of_sound = result["Microphone"][0]["time"]
 
                             (skip, trim, _, _) = args2range(
                                 args,
-                                result["Microphone"][0]["time"],
-                                result["Microphone"][-1]["time"],
+                                start_of_sound,
+                                start_of_sound
+                                + timedelta(seconds=sound.duration_seconds),
                             )
 
                             logging.debug(f"{skip=} {trim=}")
 
                             # pydub does things in milliseconds
-                            pruned = sound[int(skip * 1000) : int(-trim * 1000)]
+                            pruned = sound[int(skip * 1000) : int(trim * 1000)]
 
                             dest = f"{basename}_pruned.wav"
                             logging.debug(
