@@ -10,6 +10,8 @@ import zipfile
 import csv
 import codecs
 import urllib.request, urllib.parse
+import copy
+
 
 from pydub import AudioSegment
 
@@ -313,36 +315,34 @@ def main():
             try:
                 ff = io.BytesIO(buffer)
                 with zipfile.ZipFile(ff) as zf:
-                    for info in zf.infolist():
-                        basename, ext = info.filename.rsplit(".", 1)
+                    fnames = [n for n in zf.namelist()]
+                    fnames.sort(key=lambda f: f.rsplit(".", 1)[1])
+                    for fn in fnames:
+                        basename, ext = fn.rsplit(".", 1)
                         if ext.lower() == "csv":
                             reader = csv.DictReader(
-                                codecs.iterdecode(zf.open(info.filename, "r"), "utf-8")
+                                codecs.iterdecode(zf.open(fn, "r"), "utf-8")
                             )
                             rows = list(reader)
-                            logging.debug(f"read {destname}:member={info.filename}")
+                            logging.debug(f"read {destname}:member={fn}")
                             l = [prepare(c) for c in rows]
                             if len(l):
                                 result[basename] = l
                             continue
 
                         if ext.lower() == "mp4":
-                            buffer = zf.read(info.filename)
-                            logging.debug(
-                                f"audio file: {info.filename} size={len(buffer)}"
-                            )
+                            buffer = zf.read(fn)
+                            logging.debug(f"audio file: {fn} size={len(buffer)}")
 
                             file_like = io.BytesIO(buffer)
                             file_like.seek(0)
-                            # sound = AudioSegment(file_like) #, format="m4a")
-                            sound = AudioSegment.from_file(file_like)  # , codec="m4a")
+                            sound = AudioSegment.from_file(file_like)
                             logging.debug(
-                                f"read {destname}:member={info.filename}, audio duration={sound.duration_seconds:.1f} seconds, "
+                                f"read {destname}:member={fn}, audio duration={sound.duration_seconds:.1f} seconds, "
                                 f"frame rate={sound.frame_rate} channels={sound.channels} bitspersample={sound.sample_width*8}"
                             )
                             # play(sound)
                             start_of_sound = result["Microphone"][0]["time"]
-
                             (skip, trim, _, _) = args2range(
                                 args,
                                 start_of_sound,
@@ -350,14 +350,12 @@ def main():
                                 + timedelta(seconds=sound.duration_seconds),
                             )
 
-                            logging.debug(f"{skip=} {trim=}")
-
                             # pydub does things in milliseconds
                             pruned = sound[int(skip * 1000) : int(trim * 1000)]
 
                             dest = f"{basename}_pruned.wav"
                             logging.debug(
-                                f"saving pruned {info.filename} to {dest},"
+                                f"saving pruned {fn} to {dest},"
                                 f"audio duration={pruned.duration_seconds:.1f} seconds"
                             )
 
