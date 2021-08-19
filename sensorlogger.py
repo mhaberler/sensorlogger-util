@@ -21,10 +21,6 @@ from simplify import Simplify3D
 
 highestQuality = True
 
-# if Location and other samples start more than BUG_THRESHOLD secs
-# apart, then use the Location timestamp for that sample series (-t)
-BUG_THRESHOLD = 60
-
 RE_INT = re.compile(r"^[-+]?([1-9]\d*|0)$")
 RE_FLOAT = re.compile(r"^[-+]?(\d+([.,]\d*)?|[.,]\d+)([eE][-+]?\d+)?$")
 
@@ -228,14 +224,14 @@ class ParseTimedelta(argparse.Action):
 def main():
     ap = argparse.ArgumentParser(
         usage="%(prog)s ",
-        description="clean a Sensor Logger JSON or zipped CSV files, and optionally convert to GPX",
+        description="reformat/trim/convert a Sensor Logger JSON or zipped CSV file, and optionally convert to GPX or JSON",
     )
     ap.add_argument("-d", "--debug", action="store_true", help="show detailed logging")
     ap.add_argument(
         "-i",
         "--iso",
         action="store_true",
-        help="use ISO timestamps (default Unix timestamps - seconds since epoch)",
+        help="use ISO timestamps in JSON outoput (default Unix timestamps - seconds since epoch)",
     )
     ap.add_argument(
         "-g", "--gpx", action="store_true", help="save GPX file as (basename).gpx"
@@ -258,23 +254,23 @@ def main():
         "--skip",
         action=ParseTimedelta,
         default=0.0,
-        help="skip <time> from start (like '10s' or '1h 20m 12s'",
+        help="skip <duration> from start (like '10s' or '1h 20m 12s'",
     )
     ap.add_argument(
         "--trim",
         action=ParseTimedelta,
         default=0.0,
-        help="trim seconds from end (like '10s' or '1h 20m 12s'",
+        help="trim <duration> from end (like '10s' or '1h 20m 12s'",
     )
     ap.add_argument(
         "--begin",
         type=dateutil.parser.parse,
-        help="start extraction at <time> - example: --from '2021-07-25 13:25'",
+        help="start extraction at <time> - example: --begin '2021-07-25 13:25'",
     )
     ap.add_argument(
         "--end",
         type=dateutil.parser.parse,
-        help="stop extraction at <time> - example: --to '2021-07-25 13:25'",
+        help="stop extraction at <time> - example: --end '2021-07-25 13:25'",
     )
     ap.add_argument("files", nargs="*")
     args, extra = ap.parse_known_args()
