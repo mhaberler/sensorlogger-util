@@ -147,7 +147,6 @@ def gettime(value, offset=0):
 
 
 def stats(j):
-
     sensordict = {}
     metadata = j.get("Metadata", None)
     if metadata:
@@ -210,6 +209,8 @@ def args2range(args, start, end):
         stop = end - timedelta(seconds=args.trim)
     if args.end:
         stop = args.end
+    if args.duration:
+        stop = begin + timedelta(seconds=args.duration)
     return (args.skip, (stop - start).total_seconds(), begin, stop)
 
 
@@ -265,6 +266,12 @@ def main():
         help="trim <duration> from end (like '10s' or '1h 20m 12s'",
     )
     ap.add_argument(
+        "--duration",
+        action=ParseTimedelta,
+        default=0.0,
+        help="set <duration> (like '10s' or '1h 20m 12s'",
+    )
+    ap.add_argument(
         "--begin",
         type=dateutil.parser.parse,
         help="start extraction at <time> - example: --begin '2021-07-25 13:25'",
@@ -289,6 +296,10 @@ def main():
 
     if args.trim and args.end:
         logging.error("--trim and --end arguments are incompatible")
+        sys.exit(1)
+
+    if (args.trim or args.end) and args.duration:
+        logging.error("--duration is incompatible with both --trim and --end")
         sys.exit(1)
 
     for filename in args.files:
