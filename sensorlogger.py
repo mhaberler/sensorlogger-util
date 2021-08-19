@@ -16,7 +16,7 @@ from pydub import AudioSegment
 # from pydub.playback import play
 
 import pytimeparse
-
+import dateutil.parser
 from simplify import Simplify3D
 
 highestQuality = True
@@ -201,9 +201,28 @@ def stats(j):
             logging.debug(f"\t{k}: {v}")
 
 
+def args2range(args, start, end):
+    begin = start
+    stop = end
+    if args.skip:
+        begin = start + timedelta(seconds=args.skip)
+    if args.begin:
+        begin = args.begin
+    if args.trim:
+        stop = end - timedelta(seconds=args.trim)
+    if args.end:
+        stop = args.end
+    return (args.skip, args.trim, begin, stop)
+
+
 class ParseTimedelta(argparse.Action):
     def __call__(self, parser, args, values, option_string=None):
-        setattr(args, self.dest, pytimeparse.parse(values))
+        delta = pytimeparse.parse(values)
+        if delta == None:
+            err = f"{values} is not a valid duration. Examples: 20.2s 2h32m"
+            logging.error(err)
+            raise TypeError(err)
+        setattr(args, self.dest, delta)
 
 
 def main():
@@ -247,7 +266,16 @@ def main():
         default=0.0,
         help="trim seconds from end (like '10s' or '1h 20m 12s'",
     )
-
+    ap.add_argument(
+        "--begin",
+        type=dateutil.parser.parse,
+        help="start extraction at <time> - example: --from '2021-07-25 13:25'",
+    )
+    ap.add_argument(
+        "--end",
+        type=dateutil.parser.parse,
+        help="stop extraction at <time> - example: --to '2021-07-25 13:25'",
+    )
     ap.add_argument("files", nargs="*")
     args, extra = ap.parse_known_args()
 
@@ -256,10 +284,14 @@ def main():
         level = logging.DEBUG
     logging.basicConfig(level=level, format="%(funcName)s:%(lineno)s %(message)s")
 
-    if args.skip:
-        logging.debug(f"skipping {args.skip=}s into log")
-    if args.trim:
-        logging.debug(f"trimming {args.trim=}s off end of log")
+    logging.debug(f"{args=}")
+    if args.skip and args.begin:
+        logging.error("--skip and --begin arguments are incompatible")
+        sys.exit(1)
+
+    if args.trim and args.end:
+        logging.error("--trim and --end arguments are incompatible")
+        sys.exit(1)
 
     for filename in args.files:
         result = {}
@@ -313,14 +345,23 @@ def main():
                                 f"frame rate={sound.frame_rate} channels={sound.channels} bitspersample={sound.sample_width*8}"
                             )
                             # play(sound)
-                            pruned = sound[int(args.skip*1000):int(-args.trim*1000)]
+
+                            (skip, trim, _, _) = args2range(
+                                args,
+                                result["Microphone"][0]["time"],
+                                result["Microphone"][-1]["time"],
+                            )
+
                             # pydub does things in milliseconds
+                            pruned = sound[int(skip * 1000) : int(-trim * 1000)]
+
                             dest = f"{basename}_pruned.wav"
-                            logging.debug(f"saving pruned {info.filename} to {dest},"
-                                          f"audio duration={pruned.duration_seconds:.1f} seconds")
+                            logging.debug(
+                                f"saving pruned {info.filename} to {dest},"
+                                f"audio duration={pruned.duration_seconds:.1f} seconds"
+                            )
 
                             pruned.export(f"{basename}_pruned.wav", format="wav")
-
                             continue
 
             except zipfile.BadZipFile as e:
@@ -339,8 +380,9 @@ def main():
                     continue
                 nskip = 0
                 ntrim = 0
-                start = result[k][0]["time"] + timedelta(seconds=args.skip)
-                end = result[k][-1]["time"] - timedelta(seconds=args.trim)
+                (_, _, start, end) = args2range(
+                    args, result[k][0]["time"], result[k][-1]["time"]
+                )
                 pruned = []
                 for s in result[k]:
                     if s["time"] <= start:
