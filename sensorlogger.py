@@ -2,14 +2,17 @@ import gpxpy
 from datetime import datetime, timedelta
 import pytz
 import argparse
-import sys, os, io
+import sys
+import os
+import io
 import logging
 import rapidjson
 import re
 import zipfile
 import csv
 import codecs
-import urllib.request, urllib.parse
+import urllib.request
+import urllib.parse
 import copy
 
 
@@ -21,6 +24,15 @@ import pytimeparse
 import dateutil.parser
 from simplify import Simplify3D
 
+try:
+    from influxdb_client import InfluxDBClient, Point
+    from influxdb_client.domain.write_precision import WritePrecision
+    have_influxdb = True
+
+except ModuleNotFoundError:
+    have_influxdb = False
+
+
 highestQuality = True
 
 RE_INT = re.compile(r"^[-+]?([1-9]\d*|0)$")
@@ -28,6 +40,47 @@ RE_FLOAT = re.compile(r"^[-+]?(\d+([.,]\d*)?|[.,]\d+)([eE][-+]?\d+)?$")
 
 skipme = ["seconds_elapsed", "sensor"]
 untouchables = ["Metadata"]
+
+
+def import_into_influxdb(args, result):
+    try:
+        source = result["Metadata"]["device name"]
+    except KeyError:
+        source = None
+
+    if args.influx == 1:
+        org = '-'
+        bucket = f'{args.database}/{args.retention_policy}'
+
+    if args.influx == 2:
+        org = args.org
+        bucket = f'{args.bucket}'
+
+    with InfluxDBClient(url=args.url, token=args.token, org=org, debug=args.debug) as client:
+
+        with client.write_api() as write_api:
+            logging.debug("writing points")
+
+            for sensor in result.keys():
+                if sensor == "Metadata":
+                    continue
+                for sample in result[sensor]:
+                    d = {
+                        "measurement": sensor,
+                        # "tags": {"location": "coyote_creek"},
+                        "fields": {k: float(v) for k, v in sample.items()
+                                   if k not in {'time'}},
+                        "time": gettime(sample['time']).isoformat()
+                    }
+                    if source:
+                        d["tags"] = {"origin": f"'{source}'"}
+
+                    point = Point.from_dict(d, WritePrecision.NS)
+                    write_api.write(args.bucket, record=point)
+
+
+def import_v1(args, result):
+    pass
 
 
 def prepare(j):
@@ -44,7 +97,8 @@ def prepare(j):
             if k == "time":
                 ns = float(v[10:])
                 secs = float(v[0:-9]) + ns * 1e-9
-                cleaned[k] = datetime.utcfromtimestamp(secs).replace(tzinfo=pytz.utc)
+                cleaned[k] = datetime.utcfromtimestamp(
+                    secs).replace(tzinfo=pytz.utc)
                 continue
 
             if RE_INT.match(v):
@@ -229,7 +283,8 @@ def main():
         usage="%(prog)s ",
         description="reformat/trim/convert a Sensor Logger JSON or zipped CSV file, and optionally convert to GPX or JSON",
     )
-    ap.add_argument("-d", "--debug", action="store_true", help="show detailed logging")
+    ap.add_argument("-d", "--debug", action="store_true",
+                    help="show detailed logging")
     ap.add_argument(
         "-i",
         "--iso",
@@ -281,13 +336,69 @@ def main():
         type=dateutil.parser.parse,
         help="stop extraction at <time> - example: --end '2021-07-25 13:25'",
     )
+    ap.add_argument("-1", "--influx1",
+                    dest="influx",
+                    action="store_const",
+                    const=1, help="feed to InfluxDB V1 database")
+    ap.add_argument("-2", "--influx2",
+                    dest="influx",
+                    action="store_const",
+                    const=2, help="feed to InfluxDB V2 database")
+    if have_influxdb:
+        ap.add_argument(
+            "-u",
+            "--url",
+            action="store",
+            dest="url",
+            default="http://localhost:8086",
+            help="InfluxDB URL",
+        )
+        ap.add_argument(
+            "--database",
+            action="store",
+            dest="database",
+            default="sensorlogger",
+            help="InfluxDB database",
+        )
+        ap.add_argument(
+            "-t",
+            "--token",
+            action="store",
+            dest="token",
+            help="InfluxDB V2 auth token or username:password for V1",
+        )
+        ap.add_argument(
+            "-b",
+            "--bucket",
+            action="store",
+            dest="bucket",
+            default="sensorlogger",
+            help="InfluxDB V2 bucket - for V1 use 'database/retentionpolicy'",
+        )
+        ap.add_argument(
+            "-O",
+            "--org",
+            action="store",
+            dest="org",
+            default="-",
+            help="InfluxDB org",
+        )
+        ap.add_argument(
+            "-r",
+            "--retention-policy",
+            action="store",
+            dest="retention_policy",
+            default="autogen",
+            help="InfluxDB retention policy",
+        )
     ap.add_argument("files", nargs="*")
     args, extra = ap.parse_known_args()
 
     level = logging.WARNING
     if args.debug:
         level = logging.DEBUG
-    logging.basicConfig(level=level, format="%(funcName)s:%(lineno)s %(message)s")
+    logging.basicConfig(
+        level=level, format="%(funcName)s:%(lineno)s %(message)s")
 
     logging.debug(f"{args=}")
     if args.skip and args.begin:
@@ -297,6 +408,14 @@ def main():
     if args.trim and args.end:
         logging.error("--trim and --end arguments are incompatible")
         sys.exit(1)
+
+    if args.influx:
+        try:
+            from influxdb_client import InfluxDBClient, Point
+        except Exception:
+            logging.error(
+                "InfluxDB support missing - pip install 'influxdb-client[ciso]'")
+            sys.exit(1)
 
     if (args.trim or args.end) and args.duration:
         logging.error("--duration is incompatible with both --trim and --end")
@@ -343,7 +462,8 @@ def main():
 
                         if ext.lower() == "mp4":
                             buffer = zf.read(fn)
-                            logging.debug(f"audio file: {fn} size={len(buffer)}")
+                            logging.debug(
+                                f"audio file: {fn} size={len(buffer)}")
 
                             file_like = io.BytesIO(buffer)
                             file_like.seek(0)
@@ -362,7 +482,7 @@ def main():
                             )
 
                             # pydub does things in milliseconds
-                            pruned = sound[int(skip * 1000) : int(trim * 1000)]
+                            pruned = sound[int(skip * 1000): int(trim * 1000)]
 
                             dest = f"{basename}_pruned.wav"
                             logging.debug(
@@ -370,7 +490,8 @@ def main():
                                 f"audio duration={pruned.duration_seconds:.1f} seconds"
                             )
 
-                            pruned.export(f"{basename}_pruned.wav", format="wav")
+                            pruned.export(
+                                f"{basename}_pruned.wav", format="wav")
                             continue
 
             except zipfile.BadZipFile as e:
@@ -403,7 +524,8 @@ def main():
                     pruned.append(s)
                 result[k] = pruned
                 if nskip or ntrim:
-                    logging.debug(f"{k}: skipped {nskip}, trimmed {ntrim} samples")
+                    logging.debug(
+                        f"{k}: skipped {nskip}, trimmed {ntrim} samples")
 
         if args.json:
             json_fn = os.path.splitext(destname)[0] + "_reformat.json"
@@ -428,6 +550,9 @@ def main():
 
             gpx_fn = os.path.splitext(destname)[0] + ".gpx"
             gen_gpx(args, gpx_fn, result)
+
+        if args.influx:
+            import_into_influxdb(args, result)
 
         stats(result)
 
