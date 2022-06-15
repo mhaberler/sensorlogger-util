@@ -1,3 +1,4 @@
+from random import sample
 import gpxpy
 from datetime import datetime, timedelta
 import pytz
@@ -27,11 +28,16 @@ from simplify import Simplify3D
 try:
     from influxdb_client import InfluxDBClient, Point
     from influxdb_client.domain.write_precision import WritePrecision
+    from influxdb_client.client.exceptions import InfluxDBError
+    from influxdb_client.client.write.retry import WritesRetry
     have_influxdb = True
 
 except ModuleNotFoundError:
     have_influxdb = False
 
+# those are used as InfluxDB point tags
+retained_metadata = {'device name',
+                     'appVersion', 'device id', 'recording time'}
 
 highestQuality = True
 
@@ -42,11 +48,34 @@ skipme = ["seconds_elapsed", "sensor"]
 untouchables = ["Metadata"]
 
 
+class BatchingCallback(object):
+    def __init__(self, args) -> None:
+        self.args = args
+
+    def success(self, conf: (str, str, str), data: str):
+        if self.args.influx_lineprotocol:
+            logging.debug(f"Written batch: {conf}, data: {data}")
+
+    def error(self, conf: (str, str, str), data: str, exception: InfluxDBError):
+        if self.args.influx_debug:
+            logging.error(
+                f"Cannot write batch: {conf}, data: {data} due: {exception}")
+        else:
+            logging.error(
+                f"Cannot write batch: {conf},  due: {exception}")
+
+    def retry(self, conf: (str, str, str), data: str, exception: InfluxDBError):
+        if self.args.influx_debug:
+            logging.info(
+                f"Retryable error occurs for batch: {conf}, retry: {exception}")
+
+
+retries = WritesRetry(total=3, retry_interval=1, exponential_base=2)
+
+
 def import_into_influxdb(args, result):
-    try:
-        source = result["Metadata"]["device name"]
-    except KeyError:
-        source = None
+    tags = {k: v for k, v in result["Metadata"].items()
+            if k in retained_metadata}
 
     if args.influx == 1:
         org = '-'
@@ -56,31 +85,29 @@ def import_into_influxdb(args, result):
         org = args.org
         bucket = f'{args.bucket}'
 
-    with InfluxDBClient(url=args.url, token=args.token, org=org, debug=args.debug) as client:
-
-        with client.write_api() as write_api:
+    with InfluxDBClient(url=args.url, token=args.token, org=org,  retries=retries, debug=args.influx_debug) as client:
+        callback = BatchingCallback(args)
+        with client.write_api(success_callback=callback.success,
+                              error_callback=callback.error,
+                              retry_callback=callback.retry) as write_api:
+            # with client.write_api() as write_api:
             logging.debug("writing points")
-
+            points = 0
             for sensor in result.keys():
                 if sensor == "Metadata":
                     continue
                 for sample in result[sensor]:
                     d = {
                         "measurement": sensor,
-                        # "tags": {"location": "coyote_creek"},
+                        "tags": tags,
                         "fields": {k: float(v) for k, v in sample.items()
                                    if k not in {'time'}},
-                        "time": gettime(sample['time']).isoformat()
+                        "time": sample['time']
                     }
-                    if source:
-                        d["tags"] = {"origin": f"'{source}'"}
-
                     point = Point.from_dict(d, WritePrecision.NS)
                     write_api.write(args.bucket, record=point)
-
-
-def import_v1(args, result):
-    pass
+                    points += 1
+            logging.debug(f"wrote {points} points")
 
 
 def prepare(j):
@@ -285,6 +312,12 @@ def main():
     )
     ap.add_argument("-d", "--debug", action="store_true",
                     help="show detailed logging")
+    ap.add_argument("-D", "--influx-debug", action="store_true",
+                    dest="influx_debug",
+                    help="log InfluxDB API (warning: lots of output)")
+    ap.add_argument("-l", "--influx-lineprotocol", action="store_true",
+                    dest="influx_lineprotocol",
+                    help="log InfluxDB lineprotocol (warning: lots of output)")
     ap.add_argument(
         "-i",
         "--iso",
@@ -335,6 +368,14 @@ def main():
         "--end",
         type=dateutil.parser.parse,
         help="stop extraction at <time> - example: --end '2021-07-25 13:25'",
+    )
+    ap.add_argument(
+        "--sample-sound",
+        metavar="MILLISECONDS",
+        default=0,
+        dest="msec",
+        type=int,
+        help="take loudness (dBFS) from sound file in MILLISECONDS mS windows'",
     )
     ap.add_argument("-1", "--influx1",
                     dest="influx",
@@ -492,6 +533,20 @@ def main():
 
                             pruned.export(
                                 f"{basename}_pruned.wav", format="wav")
+
+                            if args.msec:
+                                logging.debug(f"sampling loudness from sound recording in {args.msec}ms intervals")
+                                samples = []
+                                t = args.msec/2
+                                for chunk in pruned[::args.msec]:
+                                    ln = chunk.dBFS
+                                    ts = start_of_sound + \
+                                        timedelta(seconds=t/1000.0)
+                                    samples.append({"time": ts, "dBFS": ln})
+                                    t += args.msec
+                                    
+                                result["Microphone"] = samples
+
                             continue
 
             except zipfile.BadZipFile as e:
